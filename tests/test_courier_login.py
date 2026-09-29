@@ -1,45 +1,62 @@
-import generators
 import allure
+import pytest
 
-from data import ResponseMessages
-from helpers import courier_login, courier_get_id
+from helpers import generate_random_string
+from api.courier_api import CourierApi
 
 
-class TestCourierLogin:
+class TestLoginCourier:
 
-    @allure.title("Курьер успешно авторизован при передаче в ручку всех обязательных полей")
-    def test_courier_login_successfully(self, create_courier_and_registration, delete_courier_after_test):
-        response_login = courier_login(create_courier_and_registration['login'], create_courier_and_registration['password'])
-        assert response_login.status_code == 200
-        courier_id = courier_get_id(create_courier_and_registration['login'], create_courier_and_registration['password'])
-        delete_courier_after_test.append(courier_id)
+    @allure.title('Успешный логин курьера')
+    def test_login_courier_success(self, courier):
+        payload = {
+            "login": courier["login"],
+            "password": courier["password"]
+        }
 
-    @allure.title("Получен id при успешной авторизации курьера")
-    def test_courier_login_get_id(self, create_courier_and_registration, delete_courier_after_test):
-        response_login = courier_login(create_courier_and_registration['login'], create_courier_and_registration['password']) 
-        assert response_login.json()['id'] > 0
-        courier_id = courier_get_id(create_courier_and_registration['login'], create_courier_and_registration['password'])
-        delete_courier_after_test.append(courier_id)
+        response = CourierApi.login_courier(payload)
 
-    @allure.title("Ошибка авторизации курьера при незаполненном поле password")
-    def test_courier_login_withot_password_shows_error(self, create_courier_and_registration, delete_courier_after_test):
-        response_login_without_password = courier_login(create_courier_and_registration['login'], "")
-        assert response_login_without_password.status_code == 400
-        assert response_login_without_password.json()['message'] == ResponseMessages.ERROR_LOGIN_WITHOUT_LOGIN_PASSWORD
-        courier_id = courier_get_id(create_courier_and_registration['login'], create_courier_and_registration['password'])
-        delete_courier_after_test.append(courier_id)
+        assert response.status_code == 200
+        assert "id" in response.json()
 
-    @allure.title("Ошибка авторизации курьера при указании неверного пароля")
-    def test_courier_login_with_invalid_password_shows_error(self, create_courier_and_registration, delete_courier_after_test):
-        response_login_with_invalid_password = courier_login(create_courier_and_registration['login'], generators.password_generator())
-        assert response_login_with_invalid_password.status_code == 404
-        assert response_login_with_invalid_password.json()['message'] == ResponseMessages.ERROR_ACCOUNT_NOT_FOUND
-        courier_id = courier_get_id(create_courier_and_registration['login'], create_courier_and_registration['password'])
-        delete_courier_after_test.append(courier_id)
+    @allure.title('Ошибка логина курьера без обязательного поля')
+    @pytest.mark.parametrize("missing_field", ["login", "password"])
+    def test_login_courier_without_required_field_error(
+            self, courier, missing_field):
+        payload = {
+            "login": courier["login"],
+            "password": courier["password"]
+        }
+        payload.pop(missing_field)
 
-    @allure.title("Ошибка авторизации несуществующего курьера")
-    def test_non_existent_courier_login_shows_error(self):
-        response_login_with_non_existent_courier = courier_login(generators.login_generator(), generators.password_generator())
-        assert response_login_with_non_existent_courier.status_code == 404
-        assert response_login_with_non_existent_courier.json()['message'] == ResponseMessages.ERROR_ACCOUNT_NOT_FOUND
-        
+        response = CourierApi.login_courier(payload)
+
+        assert response.status_code == 400
+        assert response.json()["message"] == "Недостаточно данных для входа"
+
+    @allure.title('Ошибка логина курьера с неверными учётными данными')
+    @pytest.mark.parametrize("wrong_field", ["login", "password"])
+    def test_login_courier_with_wrong_credentials_error(
+            self, courier, wrong_field):
+        payload = {
+            "login": courier["login"],
+            "password": courier["password"]
+        }
+        payload[wrong_field] = generate_random_string(15)
+
+        response = CourierApi.login_courier(payload)
+
+        assert response.status_code == 404
+        assert response.json()["message"] == "Учетная запись не найдена"
+
+    @allure.title('Ошибка логина несуществующего курьера')
+    def test_login_nonexistent_courier_error(self):
+        payload = {
+            "login": generate_random_string(15),
+            "password": generate_random_string(15)
+        }
+
+        response = CourierApi.login_courier(payload)
+
+        assert response.status_code == 404
+        assert response.json()["message"] == "Учетная запись не найдена"

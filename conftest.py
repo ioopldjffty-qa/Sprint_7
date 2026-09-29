@@ -1,19 +1,44 @@
 import pytest
 
-from helpers import generate_courier_data, courier_delete, courier_creation_and_return_login_password
+from helpers import generate_courier_data
+from api.courier_api import CourierApi
+from api.order_api import OrderApi
 
 
 @pytest.fixture
-def delete_courier_after_test():
+def courier():
+    payload = generate_courier_data()
+
+    CourierApi.create_courier(payload)
+
+    login_payload = {
+        "login": payload["login"],
+        "password": payload["password"]
+    }
+
+    login_response = CourierApi.login_courier(login_payload)
+    courier_id = login_response.json()["id"]
+
+    yield payload
+
+    CourierApi.delete_courier(courier_id)
+
+
+@pytest.fixture
+def courier_cleanup():
     courier_ids = []
+
     yield courier_ids
+
     for courier_id in courier_ids:
-        if courier_id:
-            courier_delete(courier_id)
+        CourierApi.delete_courier(courier_id)
+
 
 @pytest.fixture
-def create_courier_and_registration():
-    courier_data = generate_courier_data()
-    new_courier = courier_creation_and_return_login_password(courier_data)
-    assert new_courier is not None
-    return courier_data
+def order_cleanup():
+    order_tracks = []
+
+    yield order_tracks
+
+    for track in order_tracks:
+        OrderApi.cancel_order(track)

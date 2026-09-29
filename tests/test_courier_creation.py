@@ -1,68 +1,52 @@
-import generators
 import allure
+import pytest
 
-from data import ResponseMessages
-from helpers import generate_courier_data, courier_creation, courier_get_id
+from helpers import generate_courier_data
+from api.courier_api import CourierApi
 
 
-class TestCourierCreation:
+class TestCreateCourier:
 
-    @allure.title("Курьер успешно создан при передаче в ручку всех обязательных полей")
-    def test_courier_created_successfully(self, delete_courier_after_test):
-        courier_data = generate_courier_data()
-        response_create = courier_creation(courier_data)
-        courier_id = courier_get_id(courier_data['login'], courier_data['password'])
-        assert response_create.status_code == 201
-        assert courier_id > 0
-        delete_courier_after_test.append(courier_id)
+    @allure.title('Успешное создание курьера')
+    def test_create_courier_success(self, courier_cleanup):
+        payload = generate_courier_data()
 
-    @allure.title("Код ответа - 201, при успешном создании курьера")
-    def test_courier_created_response_code(self, delete_courier_after_test):
-        courier_data = generate_courier_data()
-        response_create = courier_creation(courier_data)
-        assert response_create.status_code == 201
-        courier_id = courier_get_id(courier_data['login'], courier_data['password'])
-        delete_courier_after_test.append(courier_id)
-                
-    @allure.title("Тело ответа - 'ok':true, при успешном создании курьера")
-    def test_courier_created_response_text(self, delete_courier_after_test):
-        courier_data = generate_courier_data()
-        response_create = courier_creation(courier_data)
-        assert response_create.json()['ok'] is True
-        courier_id = courier_get_id(courier_data['login'], courier_data['password'])
-        delete_courier_after_test.append(courier_id)
+        response = CourierApi.create_courier(payload)
 
-    @allure.title("Ошибка при создании курьера при незаполненном поле login")
-    def test_create_courier_withot_login_shows_error(self):
-        courier_data_without_login = {
-            'login': "",
-            'password': generators.password_generator(),
-            'firstName': generators.firstname_generator()
-            }
-        response_without_login = courier_creation(courier_data_without_login)
-        assert response_without_login.status_code == 400
-        assert response_without_login.json()['message'] == ResponseMessages.ERROR_CREATE_WITHOUT_LOGIN_PASSWORD
+        login_payload = {
+            "login": payload["login"],
+            "password": payload["password"]
+        }
+        login_response = CourierApi.login_courier(login_payload)
+        courier_cleanup.append(login_response.json()["id"])
 
-    @allure.title("Нельзя создать двух одинаковых курьеров")
-    def test_identical_couriers_cant_create(self, delete_courier_after_test):
-        courier_data = generate_courier_data()
-        response_create = courier_creation(courier_data)
-        response_repeat_courier_data = courier_creation(courier_data)
-        assert response_repeat_courier_data.status_code == 409
-        courier_id = courier_get_id(courier_data['login'], courier_data['password'])
-        delete_courier_after_test.append(courier_id)
+        assert response.status_code == 201
+        assert response.json() == {"ok": True}
 
-    @allure.title("Ошибка при создании пользователя с логином, который уже есть")
-    def test_create_courier_when_login_repeat_shows_error(self, delete_courier_after_test):
-        courier_data = generate_courier_data()
-        response_create = courier_creation(courier_data)
-        courier_data_login = {
-            'login': courier_data['login'],
-            'password': generators.password_generator(),
-            'firstName': generators.firstname_generator()
-            }
-        response_repeat_login = courier_creation(courier_data_login)
-        assert response_repeat_login.status_code == 409
-        assert response_repeat_login.json()['message'] == ResponseMessages.DUPLICATE_LOGIN
-        courier_id = courier_get_id(generate_courier_data['login'], generate_courier_data['password'])
-        delete_courier_after_test.append(courier_id)
+    @allure.title('Ошибка при создании двух одинаковых курьеров')
+    def test_create_duplicate_courier_error(self, courier_cleanup):
+        payload = generate_courier_data()
+
+        CourierApi.create_courier(payload)
+        response = CourierApi.create_courier(payload)
+
+        login_payload = {
+            "login": payload["login"],
+            "password": payload["password"]
+        }
+        login_response = CourierApi.login_courier(login_payload)
+        courier_cleanup.append(login_response.json()["id"])
+
+        assert response.status_code == 409
+        assert response.json()["message"] == "Этот логин уже используется. Попробуйте другой."
+
+    @allure.title('Ошибка при создании курьера без обязательного поля')
+    @pytest.mark.parametrize("missing_field", ["login", "password"])
+    def test_create_courier_without_required_field_error(self, missing_field):
+        payload = generate_courier_data()
+        payload.pop(missing_field)
+
+        response = CourierApi.create_courier(payload)
+
+        assert response.status_code == 400
+        assert response.json()["message"] == "Недостаточно данных для создания учетной записи"
